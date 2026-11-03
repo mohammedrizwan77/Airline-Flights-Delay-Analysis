@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airline Flight Delay Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--text:#1f2937;--muted:#6b7280;--navy:#1f3a5f;--teal:#1b998b;--line:#e5e7eb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f172a;--card:#1e293b;--text:#e5e7eb;--muted:#9ca3af;--navy:#0b1220;--line:#334155}}
+*{box-sizing:border-box}
+body{margin:0;font-family:Segoe UI,Calibri,Arial,sans-serif;background:var(--bg);color:var(--text)}
+header{background:var(--navy);color:#fff;padding:22px 28px}
+header h1{margin:0;font-size:26px}
+header p{margin:4px 0 0;color:#bfe3dd;font-size:14px}
+main{max-width:1200px;margin:0 auto;padding:20px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.kpi,.card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.kpi b{display:block;font-size:28px;color:var(--teal)}
+.kpi span{font-size:13px;color:var(--muted)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 6px;align-items:center}
+.bar button{border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 16px;border-radius:20px;cursor:pointer;font-size:14px}
+.bar button.on{background:var(--teal);border-color:var(--teal);color:#fff}
+#detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:10px 0 20px}
+#detail div{background:var(--card);border-left:4px solid var(--teal);border-radius:8px;padding:10px 12px}
+#detail small{color:var(--muted);display:block;font-size:12px}
+#detail b{font-size:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
+.card h3{margin:0 0 10px;font-size:16px}
+.card select{float:right;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px}
+.chart{position:relative;height:260px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600}
+.insight{margin-top:20px;background:var(--card);border-radius:12px;padding:16px 20px}
+.insight li{margin:6px 0}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:20px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Airline Flight Delay Dashboard</h1>
+  <p>5 airlines | 2024 | Source: SQL analysis of airline_flight_delay.csv</p>
+</header>
+<main>
+  <div class="kpis">
+    <div class="kpi"><b>5,000</b><span>Total flights</span></div>
+    <div class="kpi"><b>16.84 min</b><span>Avg arrival delay</span></div>
+    <div class="kpi"><b>82%</b><span>Load factor</span></div>
+    <div class="kpi"><b>₹4.31bn</b><span>Revenue</span></div>
+  </div>
+
+  <div class="bar" id="filters"></div>
+  <div id="detail"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Airline comparison
+        <select id="metric">
+          <option value="arr">Avg arrival delay (min)</option>
+          <option value="dep">Avg departure delay (min)</option>
+          <option value="cancel">Cancellation rate (%)</option>
+          <option value="rev">Revenue (₹ crore)</option>
+          <option value="profit">Profit (₹ crore)</option>
+          <option value="rating">Customer rating</option>
+        </select>
+      </h3>
+      <div class="chart"><canvas id="cAirline"></canvas></div>
+    </div>
+    <div class="card"><h3>Avg departure delay by weather (min)</h3><div class="chart"><canvas id="cWeather"></canvas></div></div>
+    <div class="card"><h3>Delay categories (flights)</h3><div class="chart"><canvas id="cCat"></canvas></div></div>
+    <div class="card"><h3>Worst departure hours (avg delay, min)</h3><div class="chart"><canvas id="cHour"></canvas></div></div>
+    <div class="card"><h3>Top 5 busiest routes (flights)</h3><div class="chart"><canvas id="cRoute"></canvas></div></div>
+    <div class="card">
+      <h3>Most delayed route per airline</h3>
+      <table id="worst"><thead><tr><th>Airline</th><th>Route</th><th>Avg delay</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="insight">
+    <h3>Key insights</h3>
+    <ul>
+      <li>Storm flights are delayed about 2.6x more than clear-weather flights.</li>
+      <li>SpiceJet has the highest delay and cancellation rate; IndiGo is best on both.</li>
+      <li>Delays peak in the evening, at 7 PM and 9 PM.</li>
+      <li>Delay has almost no link with customer rating (all near 3.7 / 5).</li>
+    </ul>
+  </div>
+</main>
+<footer>Built by Mohammed Rizwan | Python, MySQL, Power BI, HTML</footer>
+
+<script>
+const A = {
+  "Indigo":    {flights:1780, cancel:0.84, dep:17.88, arr:14.66, rev:1547192583, profit:1331253857, load:81.88, rating:3.70, route:"Delhi → Bengaluru", rdelay:17.73},
+  "Air India": {flights:1107, cancel:1.17, dep:22.32, arr:19.52, rev:914561895,  profit:783864962,  load:81.07, rating:3.73, route:"Hyderabad → Delhi", rdelay:24.92},
+  "Vistara":   {flights:1022, cancel:1.37, dep:17.95, arr:15.12, rev:846012450.5,profit:726580346.5,load:81.83, rating:3.68, route:"Mumbai → Chennai", rdelay:17.47},
+  "SpiceJet":  {flights:629,  cancel:3.18, dep:24.11, arr:20.95, rev:533479552,  profit:457464176,  load:81.07, rating:3.67, route:"Mumbai → Bengaluru", rdelay:23.55},
+  "Akasa Air": {flights:487,  cancel:1.03, dep:19.86, arr:17.00, rev:412403228,  profit:353312987,  load:81.76, rating:3.66, route:"Kolkata → Delhi", rdelay:20.65}
+};
+const names = Object.keys(A);
+const TEAL = "#1b998b", NAVY = "#1f3a5f", DIM = "rgba(27,153,139,.3)";
+const css = getComputedStyle(document.documentElement);
+Chart.defaults.color = css.getPropertyValue("--muted").trim();
+Chart.defaults.borderColor = "rgba(128,128,128,.2)";
+Chart.defaults.maintainAspectRatio = false;
+Chart.defaults.plugins.legend.display = false;
+
+let selected = null;
+const fmt = (n) => "₹" + (n/1e7).toFixed(0) + " cr";
+
+// filters
+const fbox = document.getElementById("filters");
+["All", ...names].forEach(n => {
+  const b = document.createElement("button");
+  b.textContent = n; if (n === "All") b.className = "on";
+  b.onclick = () => {
+    selected = n === "All" ? null : n;
+    [...fbox.children].forEach(x => x.className = x === b ? "on" : "");
+    renderDetail(); updateAirline();
+  };
+  fbox.appendChild(b);
+});
+
+function renderDetail() {
+  const d = document.getElementById("detail");
+  if (!selected) { d.innerHTML = ""; return; }
+  const a = A[selected];
+  const box = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
+  d.innerHTML = box("Flights", a.flights.toLocaleString()) + box("Arrival delay", a.arr + " min") +
+    box("Cancel rate", a.cancel + "%") + box("Load factor", a.load + "%") +
+    box("Revenue", fmt(a.rev)) + box("Rating", a.rating);
+}
+
+// airline chart with metric switch
+const metrics = {
+  arr:{k:"arr"}, dep:{k:"dep"}, cancel:{k:"cancel"}, rating:{k:"rating"},
+  rev:{k:"rev", f:v => v/1e7}, profit:{k:"profit", f:v => v/1e7}
+};
+const sel = document.getElementById("metric");
+const colors = () => names.map(n => (!selected || selected === n) ? TEAL : DIM);
+const airlineChart = new Chart(document.getElementById("cAirline"), {
+  type:"bar", data:{labels:names, datasets:[{data:[], backgroundColor:colors(), borderRadius:6}]},
+  options:{scales:{y:{beginAtZero:true}}}
+});
+function updateAirline() {
+  const m = metrics[sel.value];
+  airlineChart.data.datasets[0].data = names.map(n => +(m.f ? m.f(A[n][m.k]) : A[n][m.k]).toFixed(2));
+  airlineChart.data.datasets[0].backgroundColor = colors();
+  airlineChart.update();
+}
+sel.onchange = updateAirline;
+updateAirline();
+
+// static charts
+new Chart(document.getElementById("cWeather"), {
+  type:"bar",
+  data:{labels:["Storm","Fog","Unknown","Rain","Clear"], datasets:[{data:[39.09,34.36,25.52,20.61,15.16],
+    backgroundColor:["#c0392b","#e67e22","#9ca3af",NAVY,TEAL], borderRadius:6}]},
+  options:{indexAxis:"y"}
+});
+new Chart(document.getElementById("cCat"), {
+  type:"doughnut",
+  data:{labels:["On time / Early","Minor (≤30)","Moderate (≤60)","Severe (>60)"],
+    datasets:[{data:[1286,2205,1256,278], backgroundColor:[TEAL,NAVY,"#e67e22","#c0392b"], borderWidth:0}]},
+  options:{plugins:{legend:{display:true,position:"right"}}}
+});
+new Chart(document.getElementById("cHour"), {
+  type:"bar",
+  data:{labels:["9 PM","7 PM","1 PM","8 PM","5 PM"], datasets:[{data:[25.47,24.09,21.79,21.67,21.62], backgroundColor:"#e67e22", borderRadius:6}]}
+});
+new Chart(document.getElementById("cRoute"), {
+  type:"bar",
+  data:{labels:["Mumbai → Bengaluru","Kolkata → Delhi","Delhi → Mumbai","Ahmedabad → Mumbai","Mumbai → Chennai"],
+    datasets:[{data:[523,518,516,508,506], backgroundColor:NAVY, borderRadius:6}]},
+  options:{indexAxis:"y", scales:{x:{min:480}}}
+});
+
+// table
+document.querySelector("#worst tbody").innerHTML = names.map(n =>
+  `<tr><td>${n}</td><td>${A[n].route}</td><td>${A[n].rdelay} min</td></tr>`).join("");
+</script>
+</body>
+</html>
